@@ -2,58 +2,60 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { SongData } from "../types";
 
+/**
+ * Serviço de Integração com Gemini API
+ * Responsável por traduzir conceitos musicais em sequências de milissegundos
+ * que o motor de vibração do hardware possa interpretar.
+ */
+
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const songSchema = {
   type: Type.OBJECT,
   properties: {
-    title: { type: Type.STRING },
-    artist: { type: Type.STRING },
+    title: { type: Type.STRING, description: "Nome oficial da música" },
+    artist: { type: Type.STRING, description: "Nome do artista ou banda" },
     vibrationPattern: {
       type: Type.ARRAY,
       items: { type: Type.NUMBER },
-      description: "Sequence of alternating [vibration_ms, pause_ms]. MUST follow a percussive logic."
+      description: "Sequência alternada [Vibração_ms, Pausa_ms]. Use valores >300 para batidas fortes e <150 para batidas rápidas."
     },
     options: {
       type: Type.ARRAY,
       items: { type: Type.STRING },
-      description: "4 options including the correct one. Make them plausible within the same genre."
+      description: "4 opções de nomes de músicas (1 correta, 3 plausíveis do mesmo gênero)."
     }
   },
   required: ["title", "artist", "vibrationPattern", "options"]
 };
 
 export const getSongChallenge = async (customQuery?: string, useThinking: boolean = false): Promise<SongData> => {
+  // Seleção dinâmica de modelo baseada na complexidade
   const modelName = useThinking ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
   
   const config: any = {
     responseMimeType: "application/json",
     responseSchema: songSchema,
-    systemInstruction: `You are a World-Class Haptic Composer.
+    systemInstruction: `Você é um Engenheiro de Haptics especializado em Teoria Musical.
     
-    TASK: Convert a song's iconic percussion or vocal rhythm into a vibration pattern.
+    OBJETIVO: Traduzir o 'hook' rítmico mais icônico de uma música para um padrão de vibração.
     
-    PATTERN FORMAT: [Vibrate_ms, Pause_ms, Vibrate_ms, Pause_ms...]
+    REGRAS DE COMPOSIÇÃO:
+    - KICK (Bumbo): 400ms a 600ms de vibração.
+    - SNARE (Caixa): 150ms a 250ms de vibração.
+    - HI-HAT (Pratos): 50ms a 100ms de vibração.
+    - SILÊNCIO: Use pausas entre 200ms e 800ms para manter o groove.
     
-    RHYTHM DICTIONARY:
-    - Kick/Bass: 400-600ms (Heavy)
-    - Snare/Clap: 150-250ms (Sharp)
-    - Hi-Hat/Ghost Note: 50-100ms (Rapid)
-    - Syncopated Gaps: 300-900ms
-    
-    STRICT RULE: The pattern must be recognizable. If the user provides a genre/artist, pick their most rhythmically famous song.
-    
-    Example: 'Another One Bites the Dust' by Queen.
-    Pattern: [500, 200, 500, 200, 500, 400, 500, 100, 500, 1200]`
+    A saída DEVE ser um loop rítmico reconhecível que capture a 'alma' da percussão da música.`
   };
 
   if (useThinking) {
-    config.thinkingConfig = { thinkingBudget: 32768 };
+    config.thinkingConfig = { thinkingBudget: 16384 }; // Orçamento otimizado para raciocínio rítmico
   }
 
   const prompt = customQuery 
-    ? `Create a haptic challenge based on: "${customQuery}". If it's a genre or artist, pick a specific famous song.`
-    : "Pick a random globally famous pop, rock, or electronic song with a very distinct drum loop.";
+    ? `Crie um desafio hático baseado na música ou artista: "${customQuery}".`
+    : "Escolha uma música pop, rock ou eletrônica mundialmente famosa com um ritmo de bateria muito distinto.";
 
   const response = await ai.models.generateContent({
     model: modelName,
@@ -63,17 +65,19 @@ export const getSongChallenge = async (customQuery?: string, useThinking: boolea
 
   try {
     const data = JSON.parse(response.text);
+    // Garante que o padrão termina em uma pausa para looping suave
     if (data.vibrationPattern.length % 2 !== 0) {
-        data.vibrationPattern.push(800); 
+        data.vibrationPattern.push(600); 
     }
     return data;
   } catch (e) {
-    console.error("Gemini Parsing Error:", e);
+    console.error("Erro ao processar resposta da IA:", e);
+    // Fallback de segurança em caso de erro na geração
     return {
-      title: "Uptown Funk",
-      artist: "Mark Ronson ft. Bruno Mars",
-      vibrationPattern: [200, 150, 200, 400, 600, 650, 200, 150, 200, 950],
-      options: ["Uptown Funk", "Treasure", "24K Magic", "Locked Out of Heaven"]
+      title: "Another One Bites the Dust",
+      artist: "Queen",
+      vibrationPattern: [400, 200, 400, 200, 400, 500, 400, 100, 400, 1000],
+      options: ["Another One Bites the Dust", "Under Pressure", "We Will Rock You", "Radio Ga Ga"]
     };
   }
 };

@@ -7,205 +7,178 @@ interface HapticPlayerProps {
   intensityBoost: number;
 }
 
-type BeatType = 'KICK' | 'SNARE' | 'GHOST' | null;
+type BeatType = 'KICK' | 'SNARE' | 'TICK' | null;
 
+/**
+ * HapticPlayer: O coração sensorial do app.
+ * Utiliza a Web Audio API para simular impacto físico quando o motor de vibração é insuficiente.
+ */
 const HapticPlayer: React.FC<HapticPlayerProps> = ({ pattern, onFinished, intensityBoost }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeBeat, setActiveBeat] = useState<BeatType>(null);
   const [progress, setProgress] = useState(0);
-  const [hapticSuccess, setHapticSuccess] = useState<boolean | null>(null);
-  const [shockwave, setShockwave] = useState(false);
+  const [hapticStatus, setHapticStatus] = useState<'IDLE' | 'OK' | 'BLOCKED'>('IDLE');
+  
+  const audioCtx = useRef<AudioContext | null>(null);
+  const timeouts = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const animFrame = useRef<number | null>(null);
 
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const visualTimeouts = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const animationFrame = useRef<number | null>(null);
+  // Aplica o boost de intensidade selecionado pelo usuário
+  const processedPattern = pattern.map((v, i) => i % 2 === 0 ? v + (intensityBoost * 25) : v);
 
-  // Padrão com Boost e Normalização
-  const finalPattern = pattern.map((v, i) => i % 2 === 0 ? Math.max(40, v + (intensityBoost * 30)) : v);
-
-  const initAudio = () => {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 44100 });
+  const setupAudio = () => {
+    if (!audioCtx.current) {
+      audioCtx.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
-    if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+    if (audioCtx.current.state === 'suspended') audioCtx.current.resume();
   };
 
-  // Sintetizador Pro: Simula a sensação física através de psychoacoustics
-  const triggerSynth = (time: number, durationMs: number, type: BeatType) => {
-    const ctx = audioCtxRef.current;
+  /**
+   * Sintetizador de Impacto: Cria uma sensação tátil através do som.
+   * KICK: Onda senoidal pura em 50Hz para 'soco' no diafragma.
+   * SNARE: Onda triangular em 200Hz para impacto médio.
+   */
+  const playImpact = (time: number, durationMs: number, type: BeatType) => {
+    const ctx = audioCtx.current;
     if (!ctx) return;
 
     const master = ctx.createGain();
     master.connect(ctx.destination);
     const dur = durationMs / 1000;
 
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
     if (type === 'KICK') {
-      // Camada 1: Sub-punch (45Hz)
-      const sub = ctx.createOscillator();
-      const subGain = ctx.createGain();
-      sub.frequency.setValueAtTime(55, time);
-      sub.frequency.exponentialRampToValueAtTime(30, time + dur);
-      subGain.gain.setValueAtTime(0.8, time);
-      subGain.gain.exponentialRampToValueAtTime(0.001, time + dur);
-      sub.connect(subGain).connect(master);
-      sub.start(time); sub.stop(time + dur);
-
-      // Camada 2: Click de transiente (Ruído)
-      const noise = ctx.createOscillator(); // Fake noise for simplicity
-      noise.type = 'square';
-      noise.frequency.setValueAtTime(120, time);
-      const nGain = ctx.createGain();
-      nGain.gain.setValueAtTime(0.2, time);
-      nGain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
-      noise.connect(nGain).connect(master);
-      noise.start(time); noise.stop(time + 0.05);
-
-    } else if (type === 'SNARE') {
-      const snare = ctx.createOscillator();
-      snare.type = 'triangle';
-      snare.frequency.setValueAtTime(220, time);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.4, time);
-      g.gain.exponentialRampToValueAtTime(0.001, time + dur);
-      snare.connect(g).connect(master);
-      snare.start(time); snare.stop(time + dur);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(50, time);
+      osc.frequency.exponentialRampToValueAtTime(20, time + dur);
+      gain.gain.setValueAtTime(0.9, time);
+    } else {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(180, time);
+      gain.gain.setValueAtTime(0.4, time);
     }
+
+    gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+    osc.connect(gain).connect(master);
+    osc.start(time);
+    osc.stop(time + dur);
   };
 
-  const startSequence = (e: React.MouseEvent | React.TouchEvent) => {
+  const startInteraction = (e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
     if (isPlaying) return;
 
-    initAudio();
+    setupAudio();
     setIsPlaying(true);
     
-    // Teste de hardware imediato
-    const canVibrate = navigator.vibrate ? navigator.vibrate([50, 30, 50]) : false;
-    setHapticSuccess(canVibrate);
+    // Tenta gatilhar a vibração no momento EXATO do toque para bypass de segurança
+    const success = navigator.vibrate ? navigator.vibrate([40, 20, 40]) : false;
+    setHapticStatus(success ? 'OK' : 'BLOCKED');
 
-    let cumulativeTime = 0;
-    const LOOP_COUNT = 2;
-    const totalTime = (finalPattern.reduce((a, b) => a + b, 0) + 1200) * LOOP_COUNT;
-    const audioStartTime = audioCtxRef.current?.currentTime || 0;
+    const loopCount = 2;
+    const totalPatternTime = processedPattern.reduce((a, b) => a + b, 0);
+    const totalDuration = (totalPatternTime + 1200) * loopCount;
+    const startTime = audioCtx.current?.currentTime || 0;
 
-    for (let l = 0; l < LOOP_COUNT; l++) {
-      finalPattern.forEach((dur, idx) => {
+    let cumulative = 0;
+    for (let l = 0; l < loopCount; l++) {
+      processedPattern.forEach((dur, idx) => {
         if (idx % 2 === 0) {
-          const type: BeatType = dur > 350 ? 'KICK' : dur > 150 ? 'SNARE' : 'GHOST';
+          const type: BeatType = dur > 350 ? 'KICK' : dur > 150 ? 'SNARE' : 'TICK';
           
           const t1 = setTimeout(() => {
             setActiveBeat(type);
-            setShockwave(true);
-            if (navigator.vibrate) {
-              // Multiplexação: Dá mais "textura" ao motor
-              if (type === 'KICK') navigator.vibrate([dur - 20, 10, 10]);
-              else navigator.vibrate(dur);
-            }
-          }, cumulativeTime);
+            if (navigator.vibrate) navigator.vibrate(dur);
+          }, cumulative);
 
-          const t2 = setTimeout(() => {
-            setActiveBeat(null);
-            setShockwave(false);
-          }, cumulativeTime + dur);
-
-          visualTimeouts.current.push(t1, t2);
-          triggerSynth(audioStartTime + (cumulativeTime / 1000), dur, type);
+          const t2 = setTimeout(() => setActiveBeat(null), cumulative + dur);
+          
+          timeouts.current.push(t1, t2);
+          playImpact(startTime + (cumulative / 1000), dur, type);
         }
-        cumulativeTime += dur;
+        cumulative += dur;
       });
-      cumulativeTime += 1200; // Gap entre loops
+      cumulative += 1200;
     }
 
+    // Animação da barra de progresso
     const startPerf = performance.now();
-    const anim = () => {
+    const frame = () => {
       const elapsed = performance.now() - startPerf;
-      const p = Math.min(elapsed / totalTime, 1);
+      const p = Math.min(elapsed / totalDuration, 1);
       setProgress(p * 100);
-      if (p < 1) animationFrame.current = requestAnimationFrame(anim);
+      if (p < 1) animFrame.current = requestAnimationFrame(frame);
     };
-    animationFrame.current = requestAnimationFrame(anim);
+    animFrame.current = requestAnimationFrame(frame);
 
     setTimeout(() => {
       setIsPlaying(false);
       onFinished();
-    }, totalTime);
+    }, totalDuration);
   };
 
   useEffect(() => {
     return () => {
-      visualTimeouts.current.forEach(clearTimeout);
-      if (animationFrame.current) cancelAnimationFrame(animationFrame.current);
+      timeouts.current.forEach(clearTimeout);
+      if (animFrame.current) cancelAnimationFrame(animFrame.current);
     };
   }, []);
 
   return (
-    <div className="flex flex-col items-center w-full max-w-sm mx-auto space-y-12">
-      {/* Indicador de Status Hático */}
-      <div className={`px-6 py-2 rounded-full border text-[10px] font-black tracking-[0.2em] uppercase transition-all ${
-        hapticSuccess === true ? 'bg-cyan-500/10 border-cyan-400 text-cyan-400' : 
-        hapticSuccess === false ? 'bg-red-500/10 border-red-500 text-red-500 animate-pulse' : 
-        'bg-white/5 border-white/10 text-slate-500'
+    <div className="flex flex-col items-center w-full max-w-sm space-y-10">
+      <div className={`text-[10px] font-black uppercase tracking-[0.3em] px-4 py-1.5 rounded-full border transition-all ${
+        hapticStatus === 'OK' ? 'bg-cyan-500/10 border-cyan-500 text-cyan-400' : 
+        hapticStatus === 'BLOCKED' ? 'bg-red-500/10 border-red-500 text-red-500' : 'text-slate-500 border-white/10'
       }`}>
-        {hapticSuccess === null ? 'Toque no centro para calibrar' : 
-         hapticSuccess ? 'Motor Hático: Ativo' : 'Haptic Bloqueado: Use Fone 🎧'}
+        {hapticStatus === 'IDLE' ? 'Toque no centro para iniciar' : 
+         hapticStatus === 'OK' ? 'Haptic Engine: Ativo' : 'Vibração Bloqueada: Use Fones'}
       </div>
 
-      <div className="relative w-72 h-72 group">
-        {/* Shockwave effect */}
-        <div className={`absolute inset-0 rounded-full border-4 border-cyan-400/50 transition-all duration-100 ${
-          shockwave ? 'scale-150 opacity-0' : 'scale-100 opacity-100'
-        }`} />
-        
-        {/* Glow de batida */}
-        <div className={`absolute -inset-8 blur-3xl rounded-full transition-all duration-75 ${
-          activeBeat === 'KICK' ? 'bg-cyan-500/40 opacity-100' : 
-          activeBeat === 'SNARE' ? 'bg-fuchsia-500/30 opacity-80' : 'opacity-0'
+      <div className="relative w-64 h-64 group">
+        {/* Glow de impacto */}
+        <div className={`absolute inset-0 rounded-full blur-3xl transition-all duration-75 ${
+          activeBeat === 'KICK' ? 'bg-cyan-500/40 opacity-100 scale-125' : 
+          activeBeat === 'SNARE' ? 'bg-fuchsia-500/30 opacity-100 scale-110' : 'opacity-0 scale-100'
         }`} />
 
         <button
-          onMouseDown={startSequence}
-          onTouchStart={startSequence}
+          onMouseDown={startInteraction}
+          onTouchStart={startInteraction}
           disabled={isPlaying}
-          className={`relative z-10 w-full h-full rounded-full border-8 transition-all duration-75 flex flex-col items-center justify-center outline-none touch-none ${
-            isPlaying ? 'bg-slate-900 border-cyan-400/20' : 'bg-white border-white scale-100 hover:scale-105 active:scale-95'
-          } ${activeBeat === 'KICK' ? 'scale-110 !border-white !bg-cyan-500' : ''}`}
+          className={`relative z-10 w-full h-full rounded-full border-4 transition-all duration-75 flex items-center justify-center touch-none outline-none ${
+            isPlaying ? 'bg-slate-900 border-cyan-500/20' : 'bg-white border-white hover:scale-105 active:scale-95'
+          } ${activeBeat === 'KICK' ? 'scale-110 border-cyan-400 shadow-[0_0_40px_rgba(34,211,238,0.4)]' : ''}`}
         >
           {isPlaying ? (
             <div className="flex flex-col items-center">
-              <span className="text-5xl font-black italic text-white animate-pulse tracking-tighter">
+              <span className="text-4xl font-black italic text-white tracking-tighter animate-pulse">
                 {activeBeat || 'SENTINDO'}
               </span>
             </div>
           ) : (
-            <div className="flex flex-col items-center space-y-2">
-              <div className="w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center">
-                <svg className="w-8 h-8 text-white fill-current" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"/></svg>
-              </div>
-              <span className="font-black text-[10px] text-slate-900 uppercase tracking-widest">Sincronizar</span>
-            </div>
+            <svg className="w-12 h-12 text-black fill-current" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"/></svg>
           )}
         </button>
 
-        {/* Progress ring */}
-        <svg className="absolute -inset-6 w-[calc(100%+48px)] h-[calc(100%+48px)] -rotate-90 pointer-events-none">
-          <circle cx="50%" cy="50%" r="48%" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="4" />
+        {/* Círculo de progresso radial */}
+        <svg className="absolute -inset-4 w-[calc(100%+32px)] h-[calc(100%+32px)] -rotate-90 pointer-events-none">
+          <circle cx="50%" cy="50%" r="48%" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="2" />
           <circle 
-            cx="50%" cy="50%" r="48%" fill="none" 
-            stroke="#22d3ee" strokeWidth="8" 
+            cx="50%" cy="50%" r="48%" fill="none" stroke="#22d3ee" strokeWidth="6" 
             strokeDasharray="100" strokeDashoffset={100 - progress} 
-            pathLength="100" strokeLinecap="round"
-            className="transition-all duration-100 ease-linear"
+            pathLength="100" strokeLinecap="round" className="transition-all duration-100 ease-linear"
           />
         </svg>
       </div>
 
-      {/* Visualizer bars */}
-      <div className="flex items-end justify-center space-x-2 h-16 w-full px-12">
-        {[1,2,3,4,5,6,7,8].map(i => (
-          <div key={i} className={`flex-1 rounded-full transition-all duration-75 ${
-            activeBeat === 'KICK' ? 'bg-cyan-400 h-16 opacity-100 shadow-[0_0_15px_#22d3ee]' : 
-            activeBeat === 'SNARE' ? 'bg-fuchsia-400 h-10 opacity-80' : 
-            'bg-white/10 h-2'
+      {/* Visualizer Dinâmico */}
+      <div className="flex items-end justify-center space-x-1.5 h-12 w-full px-8">
+        {[...Array(12)].map((_, i) => (
+          <div key={i} className={`flex-1 rounded-full transition-all duration-100 ${
+            activeBeat === 'KICK' ? 'bg-cyan-400 h-12' : 
+            activeBeat === 'SNARE' ? 'bg-fuchsia-400 h-8' : 'bg-white/10 h-2'
           }`} />
         ))}
       </div>
