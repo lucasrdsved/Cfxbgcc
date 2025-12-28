@@ -5,47 +5,23 @@ import { getSongChallenge } from './services/geminiService';
 import HapticPlayer from './components/HapticPlayer';
 import confetti from 'canvas-confetti';
 
-const DEBUG_SONG: SongData = {
-  title: "Billie Jean",
-  artist: "Michael Jackson",
-  vibrationPattern: [450, 250, 200, 250, 450, 250, 200, 800],
-  options: ["Billie Jean", "Stayin' Alive", "Beat It", "Smooth Criminal"]
-};
-
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(GameState.LOBBY);
   const [session, setSession] = useState<GameSession>({ mode: 'SOLO', score: 0, attempts: 0 });
   const [isLoading, setIsLoading] = useState(false);
   const [useThinking, setUseThinking] = useState(false);
-  const [intensity, setIntensity] = useState(1);
+  const [intensity, setIntensity] = useState(2);
   const [customSongInput, setCustomSongInput] = useState('');
   const [lastResult, setLastResult] = useState<{ correct: boolean, song?: SongData } | null>(null);
-  const [feedbackType, setFeedbackType] = useState<'CORRECT' | 'INCORRECT' | null>(null);
-
-  const testVibration = () => {
-    if (navigator.vibrate) {
-      const success = navigator.vibrate([100, 50, 100, 50, 300]);
-      if (!success) {
-        alert("O comando de vibração foi enviado, mas o navegador o bloqueou. Tente abrir o app em uma aba separada fora do preview.");
-      }
-    } else {
-      alert("Seu navegador não suporta a API de Vibração (Haptics).");
-    }
-  };
 
   const startNewGame = useCallback(async (customQuery?: string) => {
     setIsLoading(true);
     try {
       const song = await getSongChallenge(customQuery, useThinking);
       setSession(prev => ({ ...prev, currentSong: song }));
-      
-      if (session.mode === 'VS') {
-        setGameState(GameState.PASSING);
-      } else {
-        setGameState(GameState.FEELING);
-      }
+      setGameState(session.mode === 'VS' ? GameState.PASSING : GameState.FEELING);
     } catch (error) {
-      alert("Erro ao conectar com a IA. Verifique sua conexão.");
+      alert("IA sobrecarregada. Tente novamente em instantes.");
     } finally {
       setIsLoading(false);
     }
@@ -53,233 +29,153 @@ const App: React.FC = () => {
 
   const handleGuess = (opt: string) => {
     if (!session.currentSong) return;
-    
     const isCorrect = opt === session.currentSong.title;
     setLastResult({ correct: isCorrect, song: session.currentSong });
-    setFeedbackType(isCorrect ? 'CORRECT' : 'INCORRECT');
     
     if (isCorrect) {
       setSession(s => ({...s, score: s.score + 1}));
-      confetti({
-        particleCount: 150,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#22d3ee', '#f0abfc', '#ffffff']
-      });
+      confetti({ particleCount: 150, spread: 80, origin: { y: 0.7 }, colors: ['#22d3ee', '#f06292', '#ffffff'] });
     }
-
-    setSession(s => ({...s, attempts: s.attempts + 1}));
-
-    setTimeout(() => {
-      setFeedbackType(null);
-      setGameState(GameState.RESULT);
-    }, 2000);
+    setGameState(GameState.RESULT);
   };
 
-  const renderLobby = () => (
-    <div className="flex flex-col items-center justify-center space-y-8 py-8 px-4 animate-zoom-feedback">
-      <div className="text-center space-y-2">
-        <h1 className="text-6xl md:text-8xl font-black italic tracking-tighter bg-clip-text text-transparent bg-gradient-to-br from-cyan-400 via-white to-fuchsia-500 leading-tight">
-          HapticBeat
-        </h1>
-        <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-xs">Sinta o Ritmo. Adivinhe o Som.</p>
-      </div>
-
-      <div className="w-full max-w-md space-y-6">
-        <div className="glass-card p-6 rounded-[2.5rem] space-y-6 border-white/10 shadow-2xl">
-          <div className="flex flex-col space-y-4">
-             <button 
-                onClick={testVibration}
-                className="flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 p-4 rounded-2xl border border-white/10 transition-all active:scale-95 group"
-             >
-                <span className="text-2xl group-active:animate-ping">📳</span>
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Testar Vibração</span>
-             </button>
-
-             <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
-
-             <div className="px-2 space-y-4">
-               <label className="flex items-center justify-between cursor-pointer">
-                  <span className="font-black text-[10px] uppercase tracking-widest text-cyan-400">Deep Thinking</span>
-                  <input 
-                    type="checkbox" 
-                    checked={useThinking} 
-                    onChange={() => setUseThinking(!useThinking)}
-                    className="w-5 h-5 rounded-full accent-fuchsia-500"
-                  />
-                </label>
-
-                <div className="space-y-3">
-                  <div className="flex justify-between text-[10px] font-black uppercase text-slate-500">
-                    <span>Intensidade Hática</span>
-                    <span className="text-white">{intensity}x</span>
-                  </div>
-                  <input 
-                    type="range" min="0" max="3" step="1" 
-                    value={intensity} 
-                    onChange={(e) => setIntensity(Number(e.target.value))}
-                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none accent-cyan-400"
-                  />
-                </div>
-             </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4">
-          <button 
-            onClick={() => { setSession(p => ({...p, mode: 'SOLO'})); setGameState(GameState.SELECTING); }} 
-            className="glass-card p-6 rounded-[2rem] hover:border-cyan-500/50 transition-all group flex items-center space-x-6 text-left active:scale-95"
-          >
-            <div className="text-4xl group-hover:rotate-12 transition-transform">🎧</div>
-            <div>
-               <h3 className="font-black uppercase text-sm tracking-widest text-white">Modo Solo</h3>
-               <p className="text-[10px] text-slate-500 font-bold italic">Adivinhe o que a IA escolher.</p>
-            </div>
-          </button>
-
-          <button 
-            onClick={() => { setSession(p => ({...p, mode: 'VS'})); setGameState(GameState.SELECTING); }} 
-            className="glass-card p-6 rounded-[2rem] hover:border-fuchsia-500/50 transition-all group flex items-center space-x-6 text-left active:scale-95"
-          >
-            <div className="text-4xl group-hover:-rotate-12 transition-transform">⚔️</div>
-            <div>
-               <h3 className="font-black uppercase text-sm tracking-widest text-white">Duelo Local</h3>
-               <p className="text-[10px] text-slate-500 font-bold italic">Desafie um amigo ao seu lado.</p>
-            </div>
-          </button>
-        </div>
-        
-        <p className="text-center text-[9px] text-slate-600 font-bold leading-relaxed px-8">
-          DICA: Se a vibração não funcionar, use fones de ouvido. O som foi otimizado para simular o impacto físico.
-        </p>
-      </div>
-    </div>
-  );
+  const openInNewTab = () => {
+    window.open(window.location.href, '_blank');
+  };
 
   return (
-    <div className="min-h-screen bg-[#020408] text-slate-50 font-inter overflow-x-hidden">
-      {feedbackType && (
-        <div className={`fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-xl transition-all duration-500 ${feedbackType === 'CORRECT' ? 'bg-cyan-500/20' : 'bg-red-500/20'}`}>
-           <div className={`text-center animate-zoom-feedback ${feedbackType === 'INCORRECT' ? 'animate-shake' : ''}`}>
-             {feedbackType === 'CORRECT' ? (
-                <div className="flex flex-col items-center">
-                   <div className="w-36 h-36 bg-cyan-500 rounded-full flex items-center justify-center bg-correct-glow mb-6 border-4 border-white">
-                      <svg className="w-20 h-20 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7"></path></svg>
-                   </div>
-                   <h2 className="text-7xl font-black italic text-white drop-shadow-2xl">LENDÁRIO!</h2>
-                </div>
-             ) : (
-                <div className="flex flex-col items-center">
-                   <div className="w-36 h-36 bg-red-600 rounded-full flex items-center justify-center bg-incorrect-glow mb-6 border-4 border-white">
-                      <svg className="w-20 h-20 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M6 18L18 6M6 6l12 12"></path></svg>
-                   </div>
-                   <h2 className="text-7xl font-black italic text-white drop-shadow-2xl">ERRADO!</h2>
-                </div>
-             )}
-           </div>
+    <div className="min-h-screen bg-[#05070a] text-white font-inter selection:bg-cyan-500/30">
+      {/* HUD Superior */}
+      <nav className="p-6 flex justify-between items-center fixed top-0 w-full z-40 bg-gradient-to-b from-[#05070a] to-transparent">
+        <div className="flex items-center space-x-3" onClick={() => setGameState(GameState.LOBBY)}>
+          <div className="w-8 h-8 bg-cyan-400 rounded flex items-center justify-center rotate-3 shadow-[0_0_20px_rgba(34,211,238,0.4)]">
+            <span className="text-black font-black text-xl italic">H</span>
+          </div>
+          <span className="font-black italic tracking-tighter text-2xl">BEAT.</span>
         </div>
-      )}
-
-      <nav className="p-6 flex justify-between items-center sticky top-0 z-50">
-        <span className="text-2xl font-black italic tracking-tighter bg-white text-black px-2 py-0.5 rounded cursor-pointer" onClick={() => setGameState(GameState.LOBBY)}>HB.</span>
-        <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-2 bg-white/5 px-4 py-1.5 rounded-full border border-white/10">
-            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Score</span>
-            <span className="font-black text-cyan-400 text-lg">{session.score}</span>
+        <div className="flex items-center space-x-4">
+          <div className="bg-white/5 border border-white/10 px-4 py-1.5 rounded-full backdrop-blur-md">
+            <span className="text-[10px] font-black text-slate-500 uppercase mr-2">Streak</span>
+            <span className="text-cyan-400 font-black">{session.score}</span>
           </div>
         </div>
       </nav>
 
-      <main className="container mx-auto max-w-lg py-4 px-6 pb-20">
+      <main className="container mx-auto max-w-lg min-h-screen flex flex-col justify-center px-6 pt-20 pb-10">
         {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-32 space-y-8 animate-pulse">
-            <div className="relative">
-              <div className="w-24 h-24 border-8 border-cyan-500/10 rounded-full"></div>
-              <div className="absolute top-0 w-24 h-24 border-8 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
-              <div className="absolute inset-0 flex items-center justify-center text-2xl">🧠</div>
-            </div>
-            <div className="text-center space-y-2">
-              <p className="text-white font-black uppercase tracking-[0.4em] text-sm text-center">Codificando Haptics...</p>
-              <p className="text-slate-500 text-[10px] font-bold italic max-w-[200px] mx-auto">Gemini está traduzindo o ritmo para o motor de vibração.</p>
+          <div className="flex flex-col items-center space-y-6 animate-pulse">
+            <div className="w-16 h-16 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin shadow-[0_0_40px_rgba(34,211,238,0.2)]"></div>
+            <div className="text-center">
+              <p className="text-white font-black uppercase tracking-[0.3em] text-xs">Analisando Espectro...</p>
+              <p className="text-slate-600 text-[10px] mt-2 font-bold italic">O Gemini está gerando padrões háticos customizados.</p>
             </div>
           </div>
         ) : (
-          <>
-            {gameState === GameState.LOBBY && renderLobby()}
-            
+          <div className="animate-zoom-feedback">
+            {gameState === GameState.LOBBY && (
+              <div className="space-y-12">
+                <div className="text-center space-y-4">
+                  <h1 className="text-8xl font-black italic tracking-tighter leading-tight bg-clip-text text-transparent bg-gradient-to-br from-cyan-400 via-white to-fuchsia-500">
+                    Sinta<br/>o Beat.
+                  </h1>
+                  <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-[10px]">Adivinhe a música pelo motor de vibração</p>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="glass-card p-6 rounded-[2.5rem] space-y-6">
+                    <button onClick={openInNewTab} className="w-full flex items-center justify-center space-x-3 bg-cyan-500/10 border border-cyan-400/30 p-4 rounded-2xl hover:bg-cyan-500/20 transition-all group">
+                      <span className="text-xl group-hover:scale-125 transition-transform">🚀</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-cyan-400">Abrir em Nova Aba (Haptic Full)</span>
+                    </button>
+                    
+                    <div className="space-y-4 px-2">
+                       <label className="flex items-center justify-between cursor-pointer">
+                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Deep Reasoning IA</span>
+                         <input type="checkbox" checked={useThinking} onChange={() => setUseThinking(!useThinking)} className="w-6 h-6 rounded-full accent-fuchsia-500" />
+                       </label>
+                       <div className="space-y-2">
+                         <div className="flex justify-between text-[10px] font-black uppercase text-slate-500">
+                           <span>Força do Motor</span>
+                           <span className="text-white">{intensity}x</span>
+                         </div>
+                         <input type="range" min="1" max="4" value={intensity} onChange={(e) => setIntensity(Number(e.target.value))} className="w-full h-2 bg-slate-800 rounded-lg appearance-none accent-cyan-400" />
+                       </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4">
+                    <button onClick={() => { setSession(p => ({...p, mode: 'SOLO'})); setGameState(GameState.SELECTING); }} className="bg-white text-black p-8 rounded-[2.5rem] flex items-center justify-between group hover:scale-[1.02] transition-all">
+                      <div className="flex items-center space-x-6">
+                        <span className="text-4xl">🎧</span>
+                        <div className="text-left">
+                          <h3 className="font-black uppercase text-sm tracking-widest leading-none">Modo Solo</h3>
+                          <p className="text-[10px] text-slate-400 font-bold mt-1">IA escolhe para você</p>
+                        </div>
+                      </div>
+                      <span className="text-2xl font-black group-hover:translate-x-2 transition-transform">→</span>
+                    </button>
+
+                    <button onClick={() => { setSession(p => ({...p, mode: 'VS'})); setGameState(GameState.SELECTING); }} className="glass-card p-8 rounded-[2.5rem] flex items-center justify-between group hover:scale-[1.02] transition-all">
+                      <div className="flex items-center space-x-6">
+                        <span className="text-4xl">⚔️</span>
+                        <div className="text-left">
+                          <h3 className="font-black uppercase text-sm tracking-widest leading-none">Duelo 1v1</h3>
+                          <p className="text-[10px] text-slate-500 font-bold mt-1">Desafie um amigo local</p>
+                        </div>
+                      </div>
+                      <span className="text-2xl font-black group-hover:translate-x-2 transition-transform">→</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {gameState === GameState.SELECTING && (
-               <div className="space-y-8 text-center py-6 animate-zoom-feedback">
-                  <div className="space-y-2">
-                    <h2 className="text-5xl font-black italic leading-none">Qual o som?</h2>
-                    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">Digite uma música ou artista</p>
-                  </div>
-                  <div className="relative group">
-                    <input 
-                      type="text" 
-                      placeholder="Ex: Michael Jackson"
-                      value={customSongInput}
-                      onChange={(e) => setCustomSongInput(e.target.value)}
-                      className="w-full bg-white/5 border-2 border-white/10 rounded-[2.5rem] p-8 text-white focus:border-cyan-500 outline-none transition-all text-center text-xl font-bold placeholder:text-slate-700 shadow-inner"
-                    />
-                    <div className="absolute inset-0 rounded-[2.5rem] bg-cyan-500/5 blur-xl group-focus-within:bg-cyan-500/10 -z-10 transition-all"></div>
-                  </div>
-                  
-                  <div className="flex flex-col space-y-4">
-                    <button 
-                      onClick={() => startNewGame(customSongInput)}
-                      className="w-full bg-white text-black p-6 rounded-[2rem] font-black uppercase tracking-[0.2em] text-lg shadow-2xl hover:scale-105 active:scale-95 transition-all"
-                    >
-                      {customSongInput ? 'Criar Desafio' : 'Sorteie uma Músicas'}
-                    </button>
-                    <button 
-                      onClick={() => setGameState(GameState.LOBBY)}
-                      className="text-slate-500 font-bold uppercase text-[10px] tracking-widest hover:text-white transition-colors"
-                    >
-                      Voltar
-                    </button>
-                  </div>
-               </div>
+              <div className="space-y-12 text-center">
+                <h2 className="text-6xl font-black italic tracking-tighter">Qual o hit?</h2>
+                <div className="relative group">
+                  <input 
+                    type="text" 
+                    placeholder="Nome da música ou artista..."
+                    value={customSongInput}
+                    onChange={(e) => setCustomSongInput(e.target.value)}
+                    className="w-full bg-white/5 border-2 border-white/10 rounded-[2.5rem] p-10 text-white focus:border-cyan-400 outline-none text-center text-2xl font-black transition-all shadow-inner placeholder:text-slate-800"
+                  />
+                  <div className="absolute inset-0 bg-cyan-400/5 blur-3xl -z-10 group-focus-within:bg-cyan-400/10"></div>
+                </div>
+                <button onClick={() => startNewGame(customSongInput)} className="w-full bg-cyan-400 text-black p-8 rounded-[2.5rem] font-black uppercase tracking-widest text-xl shadow-[0_0_50px_rgba(34,211,238,0.3)] active:scale-95 transition-all">
+                  Gerar Haptics Pro
+                </button>
+                <button onClick={() => setGameState(GameState.LOBBY)} className="text-slate-600 font-black uppercase text-[10px] tracking-widest hover:text-white transition-colors">Voltar ao início</button>
+              </div>
             )}
 
             {gameState === GameState.PASSING && (
-              <div className="text-center space-y-10 py-12 animate-zoom-feedback">
-                <div className="text-8xl animate-bounce">📱</div>
-                <div className="space-y-2">
-                  <h2 className="text-5xl font-black italic uppercase leading-none">Passe o Celular</h2>
-                  <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Entregue para o desafiado</p>
+              <div className="text-center space-y-12">
+                <div className="relative inline-block">
+                  <div className="text-[12rem] animate-bounce">📱</div>
+                  <div className="absolute inset-0 bg-fuchsia-500/20 blur-3xl rounded-full"></div>
                 </div>
-                <button 
-                  onClick={() => setGameState(GameState.FEELING)}
-                  className="w-full bg-gradient-to-r from-cyan-500 to-fuchsia-600 p-7 rounded-[2.5rem] font-black uppercase tracking-widest text-xl shadow-2xl"
-                >
-                  Estou Pronto
-                </button>
+                <div className="space-y-4">
+                  <h2 className="text-6xl font-black italic uppercase leading-none">Entregue o Device</h2>
+                  <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Quem vai adivinhar deve segurar agora</p>
+                </div>
+                <button onClick={() => setGameState(GameState.FEELING)} className="w-full bg-white text-black p-10 rounded-[3rem] font-black uppercase tracking-widest text-2xl shadow-2xl">Estou Pronto</button>
               </div>
             )}
 
             {gameState === GameState.FEELING && session.currentSong && (
-              <HapticPlayer 
-                pattern={session.currentSong.vibrationPattern} 
-                intensityBoost={intensity}
-                onFinished={() => setGameState(GameState.GUESSING)} 
-              />
+              <HapticPlayer pattern={session.currentSong.vibrationPattern} intensityBoost={intensity} onFinished={() => setGameState(GameState.GUESSING)} />
             )}
 
             {gameState === GameState.GUESSING && session.currentSong && (
-              <div className="space-y-10 text-center animate-zoom-feedback">
-                <div className="space-y-2">
-                  <h2 className="text-5xl font-black italic tracking-tighter">O que sentiu?</h2>
-                  <p className="text-slate-500 uppercase text-[10px] font-black tracking-[0.4em]">Escolha a música certa</p>
-                </div>
-                <div className="grid grid-cols-1 gap-4">
+              <div className="space-y-12 text-center">
+                <h2 className="text-6xl font-black italic tracking-tighter leading-none">O que seu corpo sentiu?</h2>
+                <div className="grid gap-4">
                   {session.currentSong.options.map((opt, i) => (
-                    <button 
-                      key={i} 
-                      onClick={() => handleGuess(opt)}
-                      className="glass-card p-7 rounded-[2rem] font-black text-lg hover:bg-white/10 hover:border-cyan-500/50 transition-all active:scale-95 text-left flex justify-between items-center group border-white/5"
-                    >
+                    <button key={i} onClick={() => handleGuess(opt)} className="glass-card p-8 rounded-[2rem] font-black text-xl hover:bg-white/10 hover:border-cyan-400 transition-all active:scale-95 text-left flex justify-between items-center group">
                       <span className="truncate pr-4">{opt}</span>
-                      <span className="opacity-0 group-hover:opacity-100 transition-opacity text-cyan-400 flex-shrink-0">GO</span>
+                      <span className="opacity-0 group-hover:opacity-100 text-cyan-400 transition-opacity">SENTIR →</span>
                     </button>
                   ))}
                 </div>
@@ -287,31 +183,25 @@ const App: React.FC = () => {
             )}
 
             {gameState === GameState.RESULT && lastResult && (
-               <div className="text-center space-y-8 py-6 animate-zoom-feedback">
-                  <div className="text-9xl drop-shadow-2xl animate-bounce">{lastResult.correct ? '🔥' : '💀'}</div>
-                  
-                  <div className="space-y-1">
-                    <h2 className={`text-6xl font-black italic tracking-tighter leading-none ${lastResult.correct ? 'text-cyan-400' : 'text-red-500'}`}>
-                      {lastResult.correct ? 'PRECISO!' : 'ERRADO!'}
+               <div className="text-center space-y-10">
+                  <div className={`text-[10rem] drop-shadow-[0_0_50px_rgba(255,255,255,0.2)] ${lastResult.correct ? 'animate-bounce' : 'animate-shake'}`}>
+                    {lastResult.correct ? '👑' : '💀'}
+                  </div>
+                  <div className="space-y-2">
+                    <h2 className={`text-7xl font-black italic tracking-tighter ${lastResult.correct ? 'text-cyan-400' : 'text-red-500'}`}>
+                      {lastResult.correct ? 'PRECISO.' : 'SURDO?'}
                     </h2>
+                    <p className="text-slate-500 font-black uppercase text-[10px] tracking-[0.4em]">A música correta era</p>
                   </div>
-                  
-                  <div className="glass-card p-10 rounded-[3rem] border-white/10 shadow-2xl bg-white/5">
-                    <p className="text-3xl font-black italic mb-1 text-white leading-tight">{lastResult.song?.title}</p>
-                    <p className="text-slate-400 font-bold uppercase text-xs tracking-tighter">{lastResult.song?.artist}</p>
+                  <div className="glass-card p-12 rounded-[3.5rem] border-white/10 relative overflow-hidden">
+                    <div className={`absolute -top-10 -right-10 w-40 h-40 blur-3xl rounded-full opacity-20 ${lastResult.correct ? 'bg-cyan-400' : 'bg-red-500'}`}></div>
+                    <p className="text-4xl font-black italic text-white mb-2 leading-tight">{lastResult.song?.title}</p>
+                    <p className="text-slate-500 uppercase font-black text-sm tracking-widest">{lastResult.song?.artist}</p>
                   </div>
-
-                  <div className="flex flex-col space-y-4 pt-4">
-                    <button 
-                      onClick={() => setGameState(GameState.LOBBY)}
-                      className="bg-white text-black py-6 rounded-[2rem] font-black uppercase tracking-[0.2em] text-sm hover:scale-105 active:scale-95 transition-all shadow-xl"
-                    >
-                      Tentar Outra
-                    </button>
-                  </div>
+                  <button onClick={() => setGameState(GameState.LOBBY)} className="w-full bg-white text-black p-8 rounded-[2.5rem] font-black uppercase text-xl hover:scale-105 active:scale-95 transition-all shadow-2xl">Novo Round</button>
                </div>
             )}
-          </>
+          </div>
         )}
       </main>
     </div>
