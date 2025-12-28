@@ -1,0 +1,7 @@
+{
+  "name": "HapticBeat Pro",
+  "description": "Descubra músicas através de padrões de vibração. Escolha qualquer música e a IA gera o ritmo para você sentir!",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
