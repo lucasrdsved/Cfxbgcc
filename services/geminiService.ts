@@ -8,7 +8,11 @@ import { SongData } from "../types";
  * que o motor de vibração do hardware possa interpretar.
  */
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Em ambiente Vite, usamos import.meta.env.VITE_GEMINI_API_KEY
+// Fallback para process.env para compatibilidade com outros ambientes
+const API_KEY = (import.meta.env?.VITE_GEMINI_API_KEY as string) || (process.env.API_KEY as string) || "";
+
+const genAI = new GoogleGenAI(API_KEY);
 
 const songSchema = {
   type: Type.OBJECT,
@@ -31,11 +35,15 @@ const songSchema = {
 
 export const getSongChallenge = async (customQuery?: string, useThinking: boolean = false): Promise<SongData> => {
   // Seleção dinâmica de modelo baseada na complexidade
-  const modelName = useThinking ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
+  // gemini-2.0-flash-thinking-exp-1219 é o modelo atual com capacidades de raciocínio
+  const modelName = useThinking ? 'gemini-2.0-flash-thinking-exp-1219' : 'gemini-2.0-flash';
   
-  const config: any = {
-    responseMimeType: "application/json",
-    responseSchema: songSchema,
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: songSchema,
+    },
     systemInstruction: `Você é um Engenheiro de Haptics especializado em Teoria Musical.
     
     OBJETIVO: Traduzir o 'hook' rítmico mais icônico de uma música para um padrão de vibração.
@@ -47,24 +55,18 @@ export const getSongChallenge = async (customQuery?: string, useThinking: boolea
     - SILÊNCIO: Use pausas entre 200ms e 800ms para manter o groove.
     
     A saída DEVE ser um loop rítmico reconhecível que capture a 'alma' da percussão da música.`
-  };
-
-  if (useThinking) {
-    config.thinkingConfig = { thinkingBudget: 16384 }; // Orçamento otimizado para raciocínio rítmico
-  }
+  });
 
   const prompt = customQuery 
     ? `Crie um desafio hático baseado na música ou artista: "${customQuery}".`
     : "Escolha uma música pop, rock ou eletrônica mundialmente famosa com um ritmo de bateria muito distinto.";
 
-  const response = await ai.models.generateContent({
-    model: modelName,
-    contents: prompt,
-    config: config,
-  });
-
   try {
-    const data = JSON.parse(response.text);
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const text = response.text();
+    const data = JSON.parse(text);
+    
     // Garante que o padrão termina em uma pausa para looping suave
     if (data.vibrationPattern.length % 2 !== 0) {
         data.vibrationPattern.push(600); 
